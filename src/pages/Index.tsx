@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import TelegramAuth from '@/components/TelegramAuth';
+import ActivityFeed from '@/components/ActivityFeed';
+import { api, User, Promise as ApiPromise } from '@/lib/api';
 
 interface Promise {
   id: string;
@@ -33,8 +36,29 @@ interface Achievement {
 
 const Index = () => {
   const { toast } = useToast();
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('promises');
   const [newPromise, setNewPromise] = useState({ title: '', description: '', deadline: '', category: 'personal' });
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      setUser({ id: 1, telegram_id: 123456789, first_name: 'Демо', username: 'demo' });
+    }
+    setIsLoading(false);
+  }, []);
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 flex items-center justify-center">
+      <Icon name="Loader2" className="animate-spin text-primary" size={48} />
+    </div>;
+  }
+
+  if (!user) {
+    return <TelegramAuth onAuthSuccess={setUser} />;
+  }
 
   const [promises, setPromises] = useState<Promise[]>([
     {
@@ -82,7 +106,7 @@ const Index = () => {
     successRate: Math.round((promises.filter(p => p.status === 'completed').length / promises.length) * 100)
   };
 
-  const handleCreatePromise = () => {
+  const handleCreatePromise = async () => {
     if (!newPromise.title || !newPromise.deadline) {
       toast({
         title: 'Заполните обязательные поля',
@@ -92,34 +116,61 @@ const Index = () => {
       return;
     }
 
-    const promise: Promise = {
-      id: Date.now().toString(),
-      title: newPromise.title,
-      description: newPromise.description,
-      deadline: newPromise.deadline,
-      status: 'active',
-      category: newPromise.category,
-      progress: 0
-    };
+    try {
+      await api.createPromise({
+        title: newPromise.title,
+        description: newPromise.description,
+        deadline: newPromise.deadline,
+        category: newPromise.category,
+        is_public: true
+      });
 
-    setPromises([promise, ...promises]);
-    setNewPromise({ title: '', description: '', deadline: '', category: 'personal' });
-    
-    toast({
-      title: '✨ Обещание создано!',
-      description: 'Теперь держите своё слово'
-    });
+      const promise: Promise = {
+        id: Date.now().toString(),
+        title: newPromise.title,
+        description: newPromise.description,
+        deadline: newPromise.deadline,
+        status: 'active',
+        category: newPromise.category,
+        progress: 0
+      };
+
+      setPromises([promise, ...promises]);
+      setNewPromise({ title: '', description: '', deadline: '', category: 'personal' });
+      setIsDialogOpen(false);
+      
+      toast({
+        title: '✨ Обещание создано!',
+        description: 'Теперь держите своё слово'
+      });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось создать обещание',
+        variant: 'destructive'
+      });
+    }
   };
 
-  const handleCompletePromise = (id: string) => {
-    setPromises(promises.map(p => 
-      p.id === id ? { ...p, status: 'completed' as const, progress: 100 } : p
-    ));
-    
-    toast({
-      title: '🎉 Поздравляем!',
-      description: 'Вы выполнили своё обещание'
-    });
+  const handleCompletePromise = async (id: string) => {
+    try {
+      await api.updatePromise(parseInt(id), { status: 'completed', progress: 100 });
+      
+      setPromises(promises.map(p => 
+        p.id === id ? { ...p, status: 'completed' as const, progress: 100 } : p
+      ));
+      
+      toast({
+        title: '🎉 Поздравляем!',
+        description: 'Вы выполнили своё обещание'
+      });
+    } catch (error) {
+      toast({
+        title: 'Ошибка',
+        description: 'Не удалось обновить обещание',
+        variant: 'destructive'
+      });
+    }
   };
 
   const getCategoryColor = (category: string) => {
@@ -151,8 +202,9 @@ const Index = () => {
             </div>
 
             <Avatar className="h-12 w-12 border-2 border-primary/20">
+              {user.photo_url && <AvatarImage src={user.photo_url} alt={user.first_name || 'User'} />}
               <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white font-semibold">
-                ИП
+                {(user.first_name?.[0] || user.username?.[0] || 'U').toUpperCase()}
               </AvatarFallback>
             </Avatar>
           </div>
@@ -217,10 +269,14 @@ const Index = () => {
         </header>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 h-14 bg-white/60 backdrop-blur-sm border-2">
+          <TabsList className="grid w-full grid-cols-4 h-14 bg-white/60 backdrop-blur-sm border-2">
             <TabsTrigger value="promises" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white">
               <Icon name="ListChecks" className="mr-2" size={18} />
               Обещания
+            </TabsTrigger>
+            <TabsTrigger value="feed" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white">
+              <Icon name="Users" className="mr-2" size={18} />
+              Лента
             </TabsTrigger>
             <TabsTrigger value="achievements" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-primary data-[state=active]:to-accent data-[state=active]:text-white">
               <Icon name="Award" className="mr-2" size={18} />
@@ -235,7 +291,7 @@ const Index = () => {
           <TabsContent value="promises" className="space-y-6">
             <div className="flex justify-between items-center">
               <h2 className="text-2xl font-bold">Мои обещания</h2>
-              <Dialog>
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
                   <Button className="bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity shadow-lg">
                     <Icon name="Plus" className="mr-2" size={18} />
@@ -412,6 +468,16 @@ const Index = () => {
             </div>
           </TabsContent>
 
+          <TabsContent value="feed" className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold mb-2">Лента активности</h2>
+              <p className="text-muted-foreground">
+                Смотрите, что делают другие пользователи
+              </p>
+            </div>
+            <ActivityFeed />
+          </TabsContent>
+
           <TabsContent value="profile" className="space-y-6">
             <Card className="border-2">
               <CardHeader>
@@ -421,13 +487,14 @@ const Index = () => {
               <CardContent className="space-y-6">
                 <div className="flex items-center gap-6">
                   <Avatar className="h-24 w-24 border-4 border-primary/20">
+                    {user.photo_url && <AvatarImage src={user.photo_url} alt={user.first_name || 'User'} />}
                     <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white text-2xl font-bold">
-                      ИП
+                      {(user.first_name?.[0] || user.username?.[0] || 'U').toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <h3 className="text-xl font-bold mb-1">Иван Петров</h3>
-                    <p className="text-muted-foreground mb-3">ivan@example.com</p>
+                    <h3 className="text-xl font-bold mb-1">{user.first_name || user.username || 'Пользователь'}</h3>
+                    <p className="text-muted-foreground mb-3">@{user.username || 'telegram_user'}</p>
                     <Button variant="outline" size="sm">
                       <Icon name="Upload" className="mr-2" size={16} />
                       Изменить фото
@@ -438,11 +505,11 @@ const Index = () => {
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="name">Имя</Label>
-                    <Input id="name" defaultValue="Иван Петров" />
+                    <Input id="name" defaultValue={user.first_name || ''} />
                   </div>
                   <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" defaultValue="ivan@example.com" />
+                    <Label htmlFor="username">Username</Label>
+                    <Input id="username" defaultValue={user.username || ''} disabled />
                   </div>
                   <div>
                     <Label htmlFor="bio">О себе</Label>

@@ -1,0 +1,14 @@
+{
+  "tests": [
+    {
+      "name": "Test auth endpoint accepts POST",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "initData": "test_data"
+      },
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    }
+  ]
+}

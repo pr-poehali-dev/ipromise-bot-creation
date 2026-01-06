@@ -1,0 +1,11 @@
+{
+  "tests": [
+    {
+      "name": "Test promises endpoint requires auth",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 500,
+      "bodyMatcher": "partial"
+    }
+  ]
+}

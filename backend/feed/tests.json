@@ -1,0 +1,14 @@
+{
+  "tests": [
+    {
+      "name": "Test feed endpoint returns activities",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "activities": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
